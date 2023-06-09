@@ -15,7 +15,7 @@ Creates and returns a new actor pool with the specified config.
 ```
 ActorPool.new(config: PoolConfig) -> Pool
 ```
-__**PoolConfig**__
+__**PoolConfig** *(table)*__
 
 `baseModule: ModuleScript` = A module that returns a function that actors in your pool will be able to run.
 
