@@ -20,6 +20,8 @@ type Pool = {
 	waitUntilFreeAsync: (any) -> any
 }
 
+local BaseActorScript = script.BaseActorScript
+
 --> [ HELPERS ] --------------------------------------------------------------
 local function CreateActor(baseActor:Actor, poolFolder:Folder, available, count)
 	local newActor: Actor = baseActor:Clone()
@@ -39,7 +41,7 @@ end
 --> [ POOL ] -----------------------------------------------------------------
 function Pool:take(autoPutBack: boolean?): Pool
 	local retries, retriesInterval = self.retries, self.retriesInterval
-	
+
 	for _ = 1, retries do
 		local atMaxConns = self.max and self.connCount >= self.max or false
 
@@ -58,7 +60,7 @@ function Pool:take(autoPutBack: boolean?): Pool
 		actor.outOfPool = true
 		return actor
 	end
-	
+
 	return warn("could not get actor")
 end
 ------------------------------------------------------------------------------
@@ -68,12 +70,12 @@ end
 function PoolConn:run(...)
 	assert(self.outOfPool, "You may not use this actor connection at the moment as it is not currently taken from the pool!")
 	assert(not self.doingWork, "You may not use this actor connection at the moment as it is already busy with another task!")
-	
+
 	self.doingWork = true
 	self.actor:SendMessage("ActorPool", ...)
 	self.actor.DoneEvent.Event:Wait()
 	self.doingWork = false
-	
+
 	if self.autoPutBack then self:putBack() end
 	return self
 end
@@ -133,7 +135,9 @@ local function New(config: PoolConfig)
 	local doneEvent = Instance.new("BindableEvent")
 	doneEvent.Name = "DoneEvent"
 	doneEvent.Parent = baseActor
-	script.BaseActorScript:Clone().Parent = baseActor
+	local actorScript = BaseActorScript:Clone()
+	actorScript.Disabled = false
+	actorScript.Parent = baseActor
 	baseModule:Clone().Parent = baseActor
 
 
@@ -157,18 +161,18 @@ end
 
 return {
 	new = New,
-	
+
 	quick = function(baseModule)
 		local actorsFolder = Instance.new("Folder")
 		actorsFolder.Name = "ActorPool.quick_ActorsFolder"
 		actorsFolder.Parent = workspace
-		
+
 		local quickPool = New {
 			baseModule = baseModule,
 			poolFolder = actorsFolder,
 			min = 25,
 		}
-		
+
 		return function(...)
 			quickPool:take(true):run(...)
 		end
