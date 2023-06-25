@@ -6,6 +6,8 @@ ActorPool is a utility module that makes working with [Actors](https://create.ro
 
 In the API below the term `Actor` refers to an Actor instance whilst the term `Actor Connection` refers to a metatable object that contains methods and an Actor instance.
 
+*When downloading the library, please set the `Enabled` property to `false` for the `BaseActorScript`.*
+
 - - -
 
 # API
