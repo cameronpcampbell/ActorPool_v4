@@ -2,8 +2,25 @@
 local Pool = {}; Pool.__index = Pool
 local PoolConn = {}; PoolConn.__index = PoolConn
 
-local Promise = require(script.Promise)
 
+--> [ SERVICES ] -------------------------------------------------------------
+local HttpService = game:GetService("HttpService")
+local SharedTableRegistry = game:GetService("SharedTableRegistry")
+------------------------------------------------------------------------------
+
+
+--> [ DEPENDENCIES ] ---------------------------------------------------------
+local Promise = require(script.Packages.promise)
+------------------------------------------------------------------------------
+
+
+--> [ VARIABLES ] ------------------------------------------------------------
+local CurrentVersion = "4.1"
+local BaseActorScript = script.BaseActorScript
+
+-- Types
+type Pool = typeof(setmetatable({}, Pool))
+type PoolConn = typeof(setmetatable({}, PoolConn))
 type PoolConfig = {
 	baseModule: ModuleScript,
 	poolFolder: Folder,
@@ -12,67 +29,68 @@ type PoolConfig = {
 	retries: number?,
 	retriesInterval: number?,
 }
+------------------------------------------------------------------------------
 
-type Pool = {
-	run: (any) -> any,
-	runAsync: (any) -> any,
-	waitUntilFree: (any) -> any,
-	waitUntilFreeAsync: (any) -> any
-}
-
-local BaseActorScript = script.BaseActorScript
 
 --> [ HELPERS ] --------------------------------------------------------------
-local function CreateActor(baseActor:Actor, poolFolder:Folder, available, count)
+local function CreateGuid()
+	return `{HttpService:GenerateGUID(false)}-{HttpService:GenerateGUID(false)}`
+end
+
+local function CreateActor(baseActor:Actor, poolFolder:Folder, available) : PoolConn
+	local guid = CreateGuid()
 	local newActor: Actor = baseActor:Clone()
+	newActor:SetAttribute("Guid", guid)
+	newActor.Name = `Actor_{guid}`
 	newActor.Parent = poolFolder
-	newActor.Name = `Actor_{count}`
 
 	return setmetatable({
+		guid = guid,
 		actor = newActor,
 		available = available,
 		autoPutBack = false,
 		outOfPool = false,
-		doingWork = false
+		doingWork = false,
+		sharedStorage = nil
 	}, PoolConn)
 end
 ------------------------------------------------------------------------------
 
+
 --> [ POOL ] -----------------------------------------------------------------
-function Pool:take(autoPutBack: boolean?): Pool
+function Pool:take(autoPutBack: boolean?): PoolConn
 	local retries, retriesInterval = self.retries, self.retriesInterval
 
 	for _ = 1, retries do
-		local atMaxConns = self.max and self.connCount >= self.max or false
+		local connCount: number, max: number = self.connCount, self.max
+		local atMaxConns = max and connCount >= max or false
 
-		local actor = table.remove(self.available)
-		if not actor then
-			actor = ((not atMaxConns) and CreateActor(self.baseActor, self.poolFolder, self.available, self.connCount+1))
-			self.connCount += actor and 1 or 0
+		local conn: PoolConn? = table.remove(self.available)
+		if (not conn) and (not atMaxConns) then
+			conn = CreateActor(self.baseActor, self.poolFolder, self.available) :: any
+			self.connCount += conn and 1 or 0
 		end
 
-		if not actor then
-			task.wait(retriesInterval)
-			continue
-		end
+		if not conn then task.wait(retriesInterval); continue end
 
-		actor.autoPutBack = autoPutBack
-		actor.outOfPool = true
-		return actor
+		(conn :: any).autoPutBack = autoPutBack;
+		(conn :: any).outOfPool = true
+		return conn :: any
 	end
 
-	return warn("could not get actor")
+	return warn("could not get actor") :: any
 end
 ------------------------------------------------------------------------------
 
+
 --> [ POOL CONN ] ------------------------------------------------------------
 -- RUN ------------------------------------------------------------
-function PoolConn:run(...)
+function PoolConn:run()
 	assert(self.outOfPool, "You may not use this actor connection at the moment as it is not currently taken from the pool!")
 	assert(not self.doingWork, "You may not use this actor connection at the moment as it is already busy with another task!")
 
 	self.doingWork = true
-	self.actor:SendMessage("ActorPool", ...)
+	self.actor:SendMessage("ActorPool")
 	self.actor.DoneEvent.Event:Wait()
 	self.doingWork = false
 
@@ -80,16 +98,13 @@ function PoolConn:run(...)
 	return self
 end
 
-function PoolConn:runAsync(...)
+function PoolConn:runAsync()
 	assert(self.outOfPool, "You may not use this actor connection at the moment as it is not currently taken from the pool!")
 	assert(not self.doingWork, "You may not use this actor connection at the moment as it is already busy with another task!")
 
-	local args = { ... }
-
 	self.doingWork = true
 	return Promise.new(function(resolve, reject, onCancel)
-		self.actor:SendMessage("ActorPool", table.unpack(args))
-		self.actor.DoneEvent.Event:Wait()
+		self.actor:SendMessage("ActorPool")
 		resolve(self)
 	end)
 	:finally(function()
@@ -118,11 +133,29 @@ end
 
 function PoolConn:putBack()
 	assert(not self.doingWork, "This actor is currently doing work so it may not be put back in the pool at this moment!")
+
+	if self.sharedTable then
+		self.sharedTable = nil
+		SharedTableRegistry:SetSharedTable(`ActorPoolv{CurrentVersion}/{self.guid}`, nil)
+	end
+
 	self.autoPutBack = false
 	self.outOfPool = false
+
 	table.insert(self.available, self)
 end
+
+
+function PoolConn:setSharedTable(tble): typeof(SharedTable.new())
+	assert(tble, "You need to provide a table to create a SharedTable from!")
+
+	local sharedTble = SharedTable.new(tble)
+	SharedTableRegistry:SetSharedTable(`ActorPoolv{CurrentVersion}/{self.guid}`, sharedTble)
+	self.sharedTable = sharedTble
+	return sharedTble
+end
 ------------------------------------------------------------------------------
+
 
 local function New(config: PoolConfig)
 	local baseModule, poolFolder, min, max = config.baseModule, config.poolFolder, config.min, config.max
@@ -141,10 +174,9 @@ local function New(config: PoolConfig)
 	baseModule:Clone().Parent = baseActor
 
 
-	local available, connCount: number = table.create(max or min), 0
+	local available = table.create(max or min)
 	for _ = 1, min do
-		table.insert(available, CreateActor(baseActor, poolFolder, available, connCount+1))
-		connCount += 1
+		table.insert(available, CreateActor(baseActor, poolFolder, available))
 	end
 
 	return setmetatable({
@@ -153,28 +185,32 @@ local function New(config: PoolConfig)
 		min = min,
 		max = max,
 		available = available,
-		connCount = connCount,
+		connCount = min,
 		retries = config.retries or 10,
 		retriesInterval = config.retriesInterval or 0.5
 	}, Pool)
 end
 
+
+local function Quick(baseModule: ModuleScript)
+	local actorsFolder = Instance.new("Folder")
+	actorsFolder.Name = "ActorPool.quick_ActorsFolder"
+	actorsFolder.Parent = workspace
+
+	local quickPool : Pool = New {
+		baseModule = baseModule,
+		poolFolder = actorsFolder,
+		min = 25,
+	}
+
+	return function()
+		quickPool:take(true):run()
+	end
+end
+
+
 return {
 	new = New,
-
-	quick = function(baseModule)
-		local actorsFolder = Instance.new("Folder")
-		actorsFolder.Name = "ActorPool.quick_ActorsFolder"
-		actorsFolder.Parent = workspace
-
-		local quickPool = New {
-			baseModule = baseModule,
-			poolFolder = actorsFolder,
-			min = 25,
-		}
-
-		return function(...)
-			quickPool:take(true):run(...)
-		end
-	end,
+	quick = Quick,
+	currentVersion = CurrentVersion
 }
