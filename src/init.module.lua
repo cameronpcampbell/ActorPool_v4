@@ -105,6 +105,7 @@ function PoolConn:runAsync()
 	self.doingWork = true
 	return Promise.new(function(resolve, reject, onCancel)
 		self.actor:SendMessage("ActorPool")
+        self.actor.DoneEvent.Event:Wait()
 		resolve(self)
 	end)
 	:finally(function()
