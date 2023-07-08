@@ -1,6 +1,7 @@
 # ActorPool
 
-These docs assume that you are already familiar with Parallel Lua, specifically [SharedTables](https://create.roblox.com/docs/reference/engine/datatypes/SharedTable#new).
+These docs assume that you are already familiar with Parallel Lua.
+(https://create.roblox.com/docs/reference/engine/datatypes/SharedTable#new).
 
 ActorPool is a utility module that makes working with [Actors](https://create.roblox.com/docs/reference/engine/classes/Actor) easy.
 
