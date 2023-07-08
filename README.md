@@ -44,7 +44,7 @@ Pool:take(autoPutBack: boolean [optional] [default = false]) -> PoolConnection
 
 With the introduction of Parallel Luau Phase 2 it is standard to communicate with actors using `SharedTable`'s, and as such it is the way you communicate with Actor Connections with this module.
 
-You can create a `SharedTable` for a specific Actor Connection using the `setSharedTable()` method. The shared table will also be passed as an arguement to the function returned from the Actor Connections module.
+You can create a `SharedTable` for a specific Actor Connection using the `:setSharedTable()` method. The newly created shared table will also be passed as an arguement to the function returned from the Actor Connections module.
 
 ```
 PoolConnection:setSharedTable(tble: table) -> SharedTable
