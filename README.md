@@ -41,29 +41,40 @@ Pool:take(autoPutBack: boolean [optional] [default = false]) -> PoolConnection
 `autoPutBack` = If this is true then after `:run()` is called on the actor connection, said connection will automatically be returned to the pool.
 - - -
 
+## Communicating With Actor Connections
+
+With the introduction of Parallel Luau Phase 2 it is standard to communicate with actors using `SharedTable`'s, and as such it is the way you communicate with Actor Connections with this module.
+
+You can create a `SharedTable` for a specific Actor Connection using the `setSharedTable()` method. The shared table will also be passed as an arguement to the function returned from the Actor Connections module.
+
+```
+PoolConnection:setSharedTable(tble: table) -> SharedTable
+```
+**Warning: The shared table created will automatically be deleted once you put the Actor Connection back into the pool.**
+
+- - -
+
 ## Running Code From The Actors Script
 Each actor has its own copy of the `baseModule` and when `:run` is called on the actor connection then the code from the module is ran in parallel. (this is a yielding function).
 ```
-PoolConnection:run(...) -> self
+PoolConnection:run() -> self
 ```
-
-`...` = The arguements to send to the actors module.
 
 <details>
 <summary>Example</summary>
 
 ```lua
-local NumsToAdd = SharedTable.new { 2, 4, 6, 8 }
-PoolConnection:run(NumsToAdd)
-print(NumsToAdd["total"]) -- PRINTS: 20
+local NumsToAdd = PoolConnection:setSharedTable { 2, 4, 6, 8 }
+PoolConnection:run()
+print(NumsToAdd.total) -- PRINTS: 20
 ```
 
 `baseModule` code:
 ```lua
-return function(NumsToAdd)
-	local total = 0
-	for _,num in NumsToAdd do total += num end
-	NumsToAdd["total"] = total
+return function(numsToAdd: SharedTable)
+  local total = 0
+  for _,num in numsToAdd do total += num end
+  numsToAdd.total = total
 end
 ```
 
@@ -75,27 +86,25 @@ end
 Works similar to `:run()` except it returns a promise instead of yielding.
 
 ```
-PoolConnection:runAsync(...) -> Promise
+PoolConnection:runAsync() -> Promise
 ```
-
-`...` = The arguements to send to the actors module.
 
 <details>
 <summary>Example</summary>
 
 ```lua
-local NumsToAdd = SharedTable.new { 2, 4, 6, 8 }
-PoolConnection:runAsync(NumsToAdd):andThen(function()
-	print(NumsToAdd["total"])  -- PRINTS: 20
+local NumsToAdd = PoolConnection:setSharedTable { 2, 4, 6, 8 }
+PoolConnection:runAsync():andThen(function()
+  print(NumsToAdd.total)
 end)
 ```
 
 `baseModule` code:
 ```lua
-return function(NumsToAdd)
-	local total = 0
-	for _,num in NumsToAdd do total += num end
-	NumsToAdd["total"] = total
+return function(numsToAdd: SharedTable)
+  local total = 0
+  for _,num in numsToAdd do total += num end
+  numsToAdd.total = total
 end
 ```
 
@@ -169,6 +178,7 @@ local PoolConnection = Pool:take()
 local nums = SharedTable.new { 2, 4, 6, 8 }
 PoolConnection:runAsync(nums):andThen(function() print(nums["total"]) end) -- PRINTS: 20
 
+-- Waits for a connection to be free.
 PoolConnection:waitUntilFree()
 
 local nums2 = SharedTable.new { 8, 16, 24, 32 }
